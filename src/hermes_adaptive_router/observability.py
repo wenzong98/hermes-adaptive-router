@@ -2,12 +2,17 @@
 
 No external dependencies.  Events are plain dicts; consumers can log them,
 forward to OpenTelemetry, or accumulate in memory for A/B analysis.
+
+JSONL persistence can be enabled with set_jsonl_path().
 """
 
 from __future__ import annotations
 
+import json
+import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from hermes_adaptive_router.router import QueryRoute
@@ -34,6 +39,33 @@ _MAX_HISTORY = 10_000
 # Optional callback: fn(event) -> None, called synchronously after each route.
 _post_route_callback: Optional[Callable[[RoutingEvent], None]] = None
 
+# Optional JSONL persistence path
+_jsonl_path: Optional[str] = None
+
+
+def set_jsonl_path(path: Optional[str]) -> None:
+    """Enable JSONL persistence at the given path (None to disable)."""
+    global _jsonl_path
+    _jsonl_path = path
+
+
+def _to_dict(event: RoutingEvent) -> dict:
+    return {
+        "query": event.query,
+        "route": {
+            "datasource": event.route.datasource,
+            "complexity": event.route.complexity,
+            "retrieval_strategy": event.route.retrieval_strategy,
+            "confidence": round(event.route.confidence, 2),
+            "reason": getattr(event.route, "reason", ""),
+        },
+        "timestamp": event.timestamp,
+        "latency_ms": round(event.latency_ms, 3),
+        "session_id": event.session_id,
+        "user_id": event.user_id,
+        "metadata": event.metadata,
+    }
+
 
 def set_post_route_callback(fn: Optional[Callable[[RoutingEvent], None]]) -> None:
     """Register a callback invoked after every routing decision."""
@@ -49,6 +81,15 @@ def record_routing_event(event: RoutingEvent) -> None:
     if _post_route_callback is not None:
         try:
             _post_route_callback(event)
+        except Exception:
+            pass
+    # JSONL persistence
+    if _jsonl_path:
+        try:
+            p = Path(os.path.expanduser(_jsonl_path))
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(_to_dict(event), ensure_ascii=False) + "\n")
         except Exception:
             pass
 
@@ -99,5 +140,6 @@ __all__ = [
     "get_routing_history",
     "get_routing_stats",
     "record_routing_event",
+    "set_jsonl_path",
     "set_post_route_callback",
 ]
