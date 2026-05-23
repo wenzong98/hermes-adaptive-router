@@ -113,6 +113,31 @@ def classify_provider(
     return ProviderPreference("auto", "No specific provider available", 0.4)
 
 
+def _route_provider(query: str, providers: set[str]) -> ProviderPreference:
+    """Internal: pick provider without config check (used by route_with_provider)."""
+    text_l = f" {query.lower()} "
+
+    if "mmx" in providers and _contains_any(text_l, _MMX_PREFERRED_KEYWORDS):
+        return ProviderPreference("mmx", "Chinese/MiniMax-specific query", 0.82)
+
+    if "exa" in providers and _contains_any(text_l, _EXA_PREFERRED_KEYWORDS):
+        return ProviderPreference("exa", "Research/academic query", 0.78)
+
+    if "tavily" in providers and _contains_any(text_l, _TAVILY_PREFERRED_KEYWORDS):
+        return ProviderPreference(
+            "tavily", "Recency query where Tavily answer summary excels", 0.85
+        )
+
+    if "tavily" in providers:
+        return ProviderPreference("tavily", "Default provider", 0.7)
+    if "exa" in providers:
+        return ProviderPreference("exa", "Fallback (Tavily unavailable)", 0.6)
+    if "mmx" in providers:
+        return ProviderPreference("mmx", "Fallback (Tavily/Exa unavailable)", 0.55)
+
+    return ProviderPreference("auto", "No specific provider available", 0.4)
+
+
 def route_with_provider(
     query: str,
     config: Optional[AdaptiveQueryRoutingConfig] = None,
@@ -125,9 +150,23 @@ def route_with_provider(
     Returns a dict combining QueryRoute and ProviderPreference.
     """
     route = classify_query(query, config, available_tools=available_tools)
-    provider_pref = classify_provider(
-        query, config, available_providers=available_providers
-    )
+    providers = set(available_providers) if available_providers is not None else {"tavily", "mmx", "exa"}
+
+    # When routing is disabled or query is empty/direct, skip provider selection
+    cfg = config or load_adaptive_query_routing_config()
+    if not cfg.enabled or not query or not query.strip() or route.datasource == "direct":
+        return {
+            "datasource": route.datasource,
+            "complexity": route.complexity,
+            "retrieval_strategy": route.retrieval_strategy,
+            "confidence": route.confidence,
+            "reason": route.reason,
+            "provider": "auto",
+            "provider_reason": "routing disabled or no web tools needed",
+            "provider_confidence": 0.0,
+        }
+
+    provider_pref = _route_provider(query, providers)
 
     return {
         "datasource": route.datasource,

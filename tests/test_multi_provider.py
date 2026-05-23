@@ -68,7 +68,7 @@ class TestRouteWithProvider:
             available_providers={"tavily", "mmx", "exa"},
         )
         assert result["datasource"] == "direct"
-        assert result["provider"] == "tavily"  # default even for direct
+        assert result["provider"] == "auto"  # direct queries skip provider selection
 
 
 if __name__ == "__main__":

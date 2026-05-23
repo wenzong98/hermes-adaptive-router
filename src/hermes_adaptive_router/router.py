@@ -17,7 +17,7 @@ Datasource = str
 Complexity = str
 RetrievalStrategy = str
 
-_URL_RE = re.compile(r"https?://[^\s<>)}\"']+", re.IGNORECASE)
+_URL_RE = re.compile(r"https?://[^\s<>)\]\}\"']+", re.IGNORECASE)
 _WORD_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 
 _DEFAULT_FORCE_WEB_KEYWORDS = (
@@ -227,7 +227,9 @@ def load_adaptive_query_routing_config(
     tavily_answer = section.get("tavily_answer", default.tavily_answer)
     if isinstance(tavily_answer, str):
         normalized_answer = tavily_answer.strip().lower()
-        if normalized_answer in {"false", "off", "none", "no", "0"}:
+        if normalized_answer == "":
+            tavily_answer = False
+        elif normalized_answer in {"false", "off", "none", "no", "0"}:
             tavily_answer = False
         elif normalized_answer in {"true", "on", "yes", "1"}:
             tavily_answer = True
@@ -259,13 +261,29 @@ def _word_count(query: str) -> int:
 
 
 def _has_url(query: str) -> bool:
-    return bool(_URL_RE.search(query))
+    """Detect URLs with balanced-parentheses handling.
+
+    Trailing punctuation (``.,;:!?`\"'\]\}>``) and unmatched closing
+    parentheses are stripped so that URLs embedded in prose or markdown
+    are matched correctly.
+    """
+    for m in _URL_RE.finditer(query):
+        url = m.group()
+        # Strip unmatched closing parens
+        while url.endswith(")") and url.count(")") > url.count("("):
+            url = url[:-1]
+        # Strip other trailing punctuation that is never part of a URL
+        while url and url[-1] in ".;:!?,'\"]}>":
+            url = url[:-1]
+        if len(url) > len("http://"):
+            return True
+    return False
 
 
 def _normalize_tools(available_tools: Optional[Iterable[str]]) -> set[str]:
     if available_tools is None:
         return {"web_search", "web_extract"}
-    return {str(tool) for tool in available_tools if str(tool).strip()}
+    return {str(tool).strip() for tool in available_tools if str(tool).strip()}
 
 
 def _route(

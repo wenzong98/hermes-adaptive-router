@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.0 (2026-05-23)
+
+### Bug Fixes
+- **URL detection with balanced parentheses**: `_has_url` now strips unmatched
+  closing parentheses and trailing punctuation (``.,;:!?`\"'\]\}>``) so that
+  URLs embedded in prose or markdown are matched correctly. Previously
+  ``https://example.com/wiki/Python_(programming_language)`` would be truncated
+  at the first ``)``.
+- **Tool name normalization**: `_normalize_tools` now strips whitespace from
+  tool names. Previously ``["  web_search  "]`` was kept with spaces.
+- **Empty string tavily_answer**: ``tavily_answer: ""`` in config now correctly
+  becomes ``False`` instead of falling back to the default ``"advanced"``.
+- **Direct query provider selection**: `route_with_provider` now returns
+  ``provider="auto"`` for direct/empty/disabled queries instead of picking a
+  provider unnecessarily.
+
+### Tests
+- Added comprehensive edge-case test suite (`tests/test_edge_cases.py`) with
+  125 tests covering:
+  - Internal helpers: `_as_bool`, `_as_int`, `_as_tuple`, `_contains_any`,
+    `_word_count`, `_has_url`, `_normalize_tools`
+  - Config loading: invalid shapes, empty strings, None values
+  - Query classification: whitespace-only, very long, multi-URL, emoji,
+    Japanese, Korean, numbers-only, special chars
+  - Provider classification: disabled routing, empty query, single provider
+  - Integration helpers: Tavily payload override, system prompt generation
+  - Observability: history limits, stats aggregation, callbacks, JSONL persistence
+- Total test count: 173 (was 48).
+
 ## 0.2.0 (2026-05-23)
 
 ### Bug Fixes
