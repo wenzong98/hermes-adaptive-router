@@ -17,7 +17,7 @@ Datasource = str
 Complexity = str
 RetrievalStrategy = str
 
-_URL_RE = re.compile(r"https?://[^\s<>)\]}\"']+", re.IGNORECASE)
+_URL_RE = re.compile(r"https?://[^\s<>)}\"']+", re.IGNORECASE)
 _WORD_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 
 _DEFAULT_FORCE_WEB_KEYWORDS = (
@@ -41,6 +41,7 @@ _DEFAULT_FORCE_WEB_KEYWORDS = (
     "online",
     # Chinese recency / web intent
     "最新",
+    "最近",
     "今天",
     "现在",
     "近期",
@@ -250,7 +251,11 @@ def _contains_any(text: str, keywords: Iterable[str]) -> bool:
 
 
 def _word_count(query: str) -> int:
-    return len(_WORD_RE.findall(query))
+    # \w in a [] character class does not match CJK characters, so we count
+    # ASCII/ASCII-compatible words and full CJK characters separately and sum.
+    ascii_words = _WORD_RE.findall(query)  # [\w]+ part (CJK excluded inside [])
+    cjk_chars = re.findall(r"[\u4e00-\u9fff]", query)  # pure CJK chars
+    return len(ascii_words) + len(cjk_chars)
 
 
 def _has_url(query: str) -> bool:

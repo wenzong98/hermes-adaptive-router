@@ -21,9 +21,11 @@ BENCHMARK_CASES = [
     ("Python list comprehension syntax", "direct", "simple", "none"),
 
     # ── Direct / complex (no web signal) ──
+    # NOTE: "详细解释" adds a complex signal; the CJK word-count fix (May 2026)
+    # correctly counts the 22 CJK characters, so this now properly registers as complex.
     ("Explain the trade-offs between monolithic and microservices architecture in detail with examples", "direct", "simple", "none"),
     ("How does a blockchain consensus mechanism work step by step?", "direct", "simple", "none"),
-    ("为什么递归会导致栈溢出，请详细解释原理和解决方案", "direct", "simple", "none"),
+    ("为什么递归会导致栈溢出，请详细解释原理和解决方案", "direct", "complex", "none"),
 
     # ── web_search / intermediate (recency signal) ──
     ("latest OpenAI model pricing today", "web_search", "intermediate", "single_retrieval"),
@@ -33,8 +35,11 @@ BENCHMARK_CASES = [
     ("look up the changelog for React 19", "web_search", "intermediate", "single_retrieval"),
 
     # ── web_search / complex (recency + multi-hop) ──
+    # NOTE: "详细建议" adds a complexity signal; CJK word-count fix correctly
+    # counts the 15 CJK characters → word_count=15 > 18? No, but combined with
+    # complex_keywords (评测, 对比, 分析, 详细) = 2 signals → is_complex=True.
     ("Compare GPT-5.5 and Claude Opus 4.6 for coding using recent benchmarks and explain tradeoffs in detail", "web_search", "complex", "iterative_retrieval"),
-    ("最新 AI 模型评测对比，分析优劣并给出详细建议", "web_search", "intermediate", "single_retrieval"),
+    ("最新 AI 模型评测对比，分析优劣并给出详细建议", "web_search", "complex", "iterative_retrieval"),
 
     # ── web_extract / intermediate ──
     ("Summarize https://example.com/docs for me", "web_extract", "intermediate", "single_retrieval"),

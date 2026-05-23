@@ -29,14 +29,25 @@ class TestClassifyProvider:
         pref = classify_provider("Python programming tutorial", available_providers={"tavily", "mmx", "exa"})
         assert pref.provider == "tavily"
 
-    def test_unavailable_provider_skipped(self):
-        pref = classify_provider("最新中文AI模型", available_providers={"tavily", "exa"})
-        # MMX not available, should fall through
-        assert pref.provider == "tavily"  # default
-
     def test_empty_providers_returns_auto(self):
         pref = classify_provider("test", available_providers=set())
-        assert pref.provider == "tavily"  # falls back to tavily even with empty set due to default
+        # Empty set means no providers available — must return "auto", not "tavily".
+        assert pref.provider == "auto", (
+            f"Empty providers should return 'auto', got {pref.provider!r}"
+        )
+
+    def test_none_providers_defaults_to_all(self):
+        pref = classify_provider("Python tutorial", available_providers=None)
+        assert pref.provider == "tavily"  # None means "assume all available"
+
+    def test_single_available_provider_used(self):
+        pref = classify_provider("Python tutorial", available_providers={"mmx"})
+        assert pref.provider == "mmx"
+
+    def test_unavailable_provider_skipped(self):
+        pref = classify_provider("最新中文AI模型", available_providers={"tavily", "exa"})
+        # MMX not available, should fall through to Tavily default
+        assert pref.provider == "tavily"
 
 
 class TestRouteWithProvider:

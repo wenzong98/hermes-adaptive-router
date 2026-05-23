@@ -82,7 +82,7 @@ def classify_provider(
         ProviderPreference with provider name and reason.
     """
     cfg = config or load_adaptive_query_routing_config()
-    providers = set(available_providers or {"tavily", "mmx", "exa"})
+    providers = set(available_providers) if available_providers is not None else {"tavily", "mmx", "exa"}
     text_l = f" {query.lower()} "
 
     if not cfg.enabled:
@@ -104,7 +104,7 @@ def classify_provider(
     if "tavily" in providers:
         return ProviderPreference("tavily", "Default provider", 0.7)
 
-    # Fallback chain
+    # Fallback chain — only return a provider if it is actually available
     if "exa" in providers:
         return ProviderPreference("exa", "Fallback (Tavily unavailable)", 0.6)
     if "mmx" in providers:

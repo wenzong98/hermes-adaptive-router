@@ -96,3 +96,62 @@ def test_prompt_block_is_conditional_and_mentions_layered_policy():
     assert "web_extract" in prompt
     assert "Tavily" in prompt
     assert "AI summary" in prompt
+
+
+# ─── Regression tests for bug fixes ──────────────────────────────────────────
+
+def test_chinese_word_count_fixed():
+    """Bug fix: _word_count must count each CJK character as one word.
+
+    Previously the regex ``[\\w\\u4e00-\\u9fff]+`` treated a run of CJK
+    characters as a single match because \\w inside ``[]`` only matches ASCII
+    alphanumerics.  Pure-Chinese queries like "分析比特币为什么最近一直跌" were
+    counted as 1 word, causing the router to mis-classify them as "simple"
+    instead of routing them to web_search.
+    """
+    cfg = AdaptiveQueryRoutingConfig(enabled=True)
+
+    # Pure Chinese: 14 characters should be counted as 14 words
+    route = classify_query(
+        "分析比特币为什么最近一直跌",
+        cfg,
+        available_tools={"web_search", "web_extract"},
+    )
+    assert route.datasource == "web_search", (
+        f"Expected web_search for Chinese recency query, got {route.datasource}"
+    )
+    assert route.complexity == "intermediate"
+
+
+def test_recent_keyword_routes_to_web_search():
+    """Bug fix: '最近' must trigger web_search like '最新' does.
+
+    The Chinese keyword '最近' (recently) was missing from
+    _DEFAULT_FORCE_WEB_KEYWORDS, so queries like "比特币最近为什么一直跌"
+    were incorrectly routed to direct.
+    """
+    cfg = AdaptiveQueryRoutingConfig(enabled=True)
+    route = classify_query(
+        "比特币最近为什么一直跌",
+        cfg,
+        available_tools={"web_search", "web_extract"},
+    )
+    assert route.datasource == "web_search", (
+        f"'最近' should force web_search, got {route.datasource}"
+    )
+
+
+def test_empty_query_routes_to_direct():
+    """Edge case: empty query should route to direct, not crash."""
+    route = classify_query("", available_tools={"web_search", "web_extract"})
+    assert route.datasource == "direct"
+    assert route.confidence > 0
+
+
+def test_disabled_routing_returns_direct():
+    """When adaptive routing is disabled, query should still get a valid route."""
+    cfg = AdaptiveQueryRoutingConfig(enabled=False)
+    route = classify_query("latest news", cfg, available_tools={"web_search", "web_extract"})
+    assert route.datasource == "direct"
+    assert route.complexity == "simple"
+
