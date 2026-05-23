@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-adaptive-router"
-version = "0.1.0"
+version = "0.4.0"
 description = "Deterministic adaptive query routing for Hermes Agent"
 readme = "README.md"
 license = {text = "MIT"}
