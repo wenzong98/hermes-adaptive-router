@@ -2,318 +2,176 @@
 
 ## Core Router
 
-### `classify_query(query: str, config: AdaptiveQueryRoutingConfig | None = None) -> QueryRoute`
+### `classify_query(query: str, config: AdaptiveQueryRoutingConfig | None = None, *, available_tools: Iterable[str] | None = None) -> QueryRoute`
 
-Classify a user query into a routing decision.
+Classify a user query into a deterministic routing decision.
 
-**Parameters:**
-- `query` (str): The user query text
-- `config` (AdaptiveQueryRoutingConfig, optional): Routing configuration. Uses defaults if not provided.
+**Returns**
+- `QueryRoute.datasource`: `"direct"`, `"web_search"`, or `"web_extract"`
+- `QueryRoute.complexity`: `"simple"`, `"intermediate"`, or `"complex"`
+- `QueryRoute.retrieval_strategy`: `"none"`, `"single_retrieval"`, or `"iterative_retrieval"`
+- `QueryRoute.confidence`: `0.0` to `1.0`
+- `QueryRoute.reason`: short explanation for the decision
 
-**Returns:**
-- `QueryRoute`: A dataclass with fields:
-  - `datasource` (str): One of `"direct"`, `"web_search"`, `"web_extract"`
-  - `complexity` (str): One of `"simple"`, `"intermediate"`, `"complex"`
-  - `confidence` (float): Confidence score 0.0-1.0
-  - `retrieval_strategy` (str): One of `"none"`, `"single"`, `"iterative"`
-
-**Example:**
 ```python
 from hermes_adaptive_router import classify_query
 
-route = classify_query("latest Bitcoin price today")
-print(route.datasource)      # "web_search"
-print(route.complexity)      # "intermediate"
-print(route.confidence)      # 0.92
-print(route.retrieval_strategy)  # "single"
+route = classify_query(
+    "latest Bitcoin price today",
+    available_tools={"web_search", "web_extract"},
+)
+print(route.datasource)          # "web_search"
+print(route.retrieval_strategy)  # "single_retrieval"
 ```
-
----
 
 ### `class AdaptiveQueryRoutingConfig`
 
-Configuration dataclass for the router.
+Configuration dataclass for the deterministic router.
 
-**Fields:**
+| Field | Type | Default |
+|---|---|---|
+| `enabled` | `bool` | `True` |
+| `simple_max_words` | `int` | `14` |
+| `prefer_search_summary` | `bool` | `True` |
+| `tavily_answer` | `str | bool | None` | `"advanced"` |
+| `force_web_keywords` | `tuple[str, ...]` | built-in defaults |
+| `complex_keywords` | `tuple[str, ...]` | built-in defaults |
+| `direct_keywords` | `tuple[str, ...]` | built-in defaults |
+| `complex_min_signals` | `int` | `2` |
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `enabled` | bool | `True` | Master switch |
-| `prefer_search_summary` | bool | `True` | Prefer Tavily AI summary over raw results |
-| `tavily_answer` | str \| bool | `"advanced"` | Tavily answer level: `"basic"`, `"advanced"`, or `False` |
-| `simple_max_words` | int | `14` | Max word count for simple queries |
-| `complex_min_signals` | int | `2` | Minimum signals to mark complex |
-| `force_web_keywords` | tuple | built-in | Keywords forcing web_search |
-| `complex_keywords` | tuple | built-in | Keywords increasing complexity |
-| `direct_keywords` | tuple | built-in | Keywords short-circuiting to direct |
+### `load_adaptive_query_routing_config(raw_config: Mapping[str, Any] | None) -> AdaptiveQueryRoutingConfig`
 
-**Example:**
-```python
-from hermes_adaptive_router import AdaptiveQueryRoutingConfig
+Parse routing config from a plain mapping. Passing `None` returns built-in defaults.
 
-config = AdaptiveQueryRoutingConfig(
-    enabled=True,
-    prefer_search_summary=True,
-    tavily_answer="advanced",
-    simple_max_words=10,
-    complex_min_signals=3,
-)
-```
+Supported shapes:
 
----
-
-### `load_adaptive_query_routing_config(config_dict: dict | None) -> AdaptiveQueryRoutingConfig`
-
-Load configuration from a dictionary (typically from YAML).
-
-Supports two shapes:
 ```yaml
-# Top-level
 adaptive_query_routing:
   enabled: true
-  prefer_search_summary: true
 
-# Nested under web
 web:
   adaptive_query_routing:
     enabled: true
-    prefer_search_summary: true
+    tavily_answer: advanced
 ```
 
-**Example:**
-```python
-import yaml
-from hermes_adaptive_router import load_adaptive_query_routing_config
+## Provider Routing
 
-with open("config.yaml") as f:
-    config = yaml.safe_load(f)
+### `classify_provider(query: str, config: AdaptiveQueryRoutingConfig | None = None, *, available_providers: Iterable[str] | None = None) -> ProviderPreference`
 
-routing_config = load_adaptive_query_routing_config(config)
-```
+Pick the preferred provider for a query using the provider registry.
 
----
-
-## Multi-Provider Routing
-
-### `classify_provider(query: str, config: AdaptiveQueryRoutingConfig | None = None) -> ProviderPreference`
-
-Classify which search provider is best suited for a query.
-
-**Returns:**
-- `ProviderPreference` with fields:
-  - `provider` (str): `"tavily"`, `"mmx"`, or `"exa"`
-  - `reason` (str): Human-readable reason
-  - `confidence` (float): 0.0-1.0
-
-**Example:**
 ```python
 from hermes_adaptive_router import classify_provider
 
-pref = classify_provider("最新中文AI模型")
-print(pref.provider)    # "mmx"
-print(pref.reason)      # "Chinese query detected"
-
-pref = classify_provider("research paper on neural embeddings")
-print(pref.provider)    # "exa"
-print(pref.reason)      # "Academic/research query detected"
+pref = classify_provider(
+    "research paper on neural embeddings",
+    available_providers={"tavily", "mmx", "exa"},
+)
+print(pref.provider)  # "exa"
 ```
 
----
+### `route_with_provider(...) -> dict[str, Any]`
 
-### `route_with_provider(query: str, config: AdaptiveQueryRoutingConfig | None = None) -> tuple[QueryRoute, ProviderPreference]`
+Combined routing for datasource, retrieval strategy, provider, language, and intent.
 
-Combined routing: classify both datasource and provider.
+Returned keys:
+- `datasource`
+- `complexity`
+- `retrieval_strategy`
+- `confidence`
+- `reason`
+- `provider`
+- `provider_reason`
+- `provider_confidence`
+- `language`
+- `language_confidence`
+- `intent`
+- `intent_confidence`
 
-**Returns:**
-- Tuple of `(QueryRoute, ProviderPreference)`
-
-**Example:**
 ```python
 from hermes_adaptive_router import route_with_provider
 
-route, provider = route_with_provider("latest OpenAI pricing today")
-print(route.datasource)      # "web_search"
-print(provider.provider)     # "tavily"
+result = route_with_provider(
+    "search github python code example",
+    available_tools={"web_search"},
+    available_providers={"tavily", "google", "bing"},
+)
+print(result["datasource"])  # "web_search"
+print(result["provider"])    # "google"
+print(result["intent"])      # "code"
 ```
 
----
+## Hermes Helpers
 
-## System Prompt Integration
+### `build_adaptive_query_routing_prompt(available_tools: Iterable[str], config: AdaptiveQueryRoutingConfig | None = None) -> str`
 
-### `build_adaptive_query_routing_prompt(available_tools: set[str]) -> str`
+Return the prompt fragment that teaches the LLM when to stay direct, use `web_search`, or escalate to `web_extract`.
 
-Generate the system prompt paragraph that teaches the LLM about routing.
+### `classify_for_hermes(query: str, *, available_tools: Iterable[str] | None = None, raw_config: Mapping[str, Any] | None = None) -> QueryRoute`
 
-**Parameters:**
-- `available_tools` (set[str]): Available tool names (e.g., `{"web_search", "web_extract"}`)
+Hermes adapter that loads host config in the integration layer and then calls the core router.
 
-**Returns:**
-- `str`: Formatted prompt paragraph
+### `get_system_prompt_addition(available_tools: Iterable[str], *, raw_config: Mapping[str, Any] | None = None) -> str`
 
-**Example:**
+Hermes-friendly wrapper around `build_adaptive_query_routing_prompt`.
+
+### `tavily_search_payload_override(payload: dict[str, Any], *, raw_config: Mapping[str, Any] | None = None) -> dict[str, Any]`
+
+Mutate a Tavily payload when summary answers are enabled.
+
 ```python
-from hermes_adaptive_router import build_adaptive_query_routing_prompt
+from hermes_adaptive_router import tavily_search_payload_override
 
-prompt = build_adaptive_query_routing_prompt({"web_search", "web_extract"})
-# Inject into system prompt
-```
-
----
-
-### `get_system_prompt_addition(available_tools: set[str]) -> str`
-
-Alias for `build_adaptive_query_routing_prompt()`. Hermes integration helper.
-
----
-
-## Tavily Integration
-
-### `tavily_search_payload_override(payload: dict, config: AdaptiveQueryRoutingConfig) -> dict`
-
-Mutate a Tavily search payload to include adaptive routing parameters.
-
-**Modifications:**
-- Adds `include_answer: "advanced"` when `prefer_search_summary` is True
-- Adds `search_depth: "advanced"` for richer synthesis
-
-**Example:**
-```python
-from hermes_adaptive_router import tavily_search_payload_override, AdaptiveQueryRoutingConfig
-
-config = AdaptiveQueryRoutingConfig()
 payload = {"query": "latest AI news"}
-modified = tavily_search_payload_override(payload, config)
-# {"query": "latest AI news", "include_answer": "advanced", "search_depth": "advanced"}
+modified = tavily_search_payload_override(
+    payload,
+    raw_config={"adaptive_query_routing": {"tavily_answer": "advanced"}},
+)
+print(modified["include_answer"])  # "advanced"
+print(modified["search_depth"])    # "advanced"
 ```
-
----
 
 ## Observability
 
 ### `record_routing_event(event: RoutingEvent) -> None`
 
-Record a routing decision for analytics.
+Record a routing decision.
 
-**Example:**
 ```python
-from hermes_adaptive_router import record_routing_event, RoutingEvent
+from hermes_adaptive_router import QueryRoute, RoutingEvent, record_routing_event
 
-record_routing_event(RoutingEvent(
-    query="latest Bitcoin price",
-    datasource="web_search",
-    complexity="intermediate",
-    confidence=0.92,
-    latency_ms=0.05,
-))
+record_routing_event(
+    RoutingEvent(
+        query="latest Bitcoin price",
+        route=QueryRoute("web_search", "intermediate", "single_retrieval", 0.92, "recency signal"),
+        latency_ms=0.05,
+    )
+)
 ```
 
----
+### `get_routing_stats() -> dict[str, Any]`
 
-### `get_routing_stats() -> dict`
+Returns aggregates like:
 
-Get aggregate statistics about routing decisions.
-
-**Returns:**
 ```python
 {
     "total": 100,
     "datasource_distribution": {"direct": 42, "web_search": 45, "web_extract": 13},
     "complexity_distribution": {"simple": 50, "intermediate": 35, "complex": 15},
-    "avg_latency_ms": 0.05,
+    "strategy_distribution": {"none": 42, "single_retrieval": 38, "iterative_retrieval": 20},
+    "latency_ms": {"mean": 0.05, "min": 0.01, "max": 0.3},
 }
 ```
 
----
+### `get_routing_history(limit: int = 100) -> list[RoutingEvent]`
 
-### `get_routing_history() -> list[RoutingEvent]`
-
-Get the full routing history (last 1000 events).
-
----
+Return recent events, newest first.
 
 ### `clear_routing_history() -> None`
 
-Clear all recorded routing events.
+Clear in-memory history.
 
----
+### `set_post_route_callback(callback: Callable[[RoutingEvent], None] | None) -> None`
 
-### `set_post_route_callback(callback: Callable[[RoutingEvent], None]) -> None`
-
-Set a callback invoked after each routing decision.
-
-**Example:**
-```python
-from hermes_adaptive_router import set_post_route_callback
-
-def log_to_datadog(event):
-    # Send to external monitoring
-    pass
-
-set_post_route_callback(log_to_datadog)
-```
-
----
-
-## Hermes Integration Helpers
-
-### `classify_for_hermes(query: str, available_tools: set[str], config: AdaptiveQueryRoutingConfig | None = None) -> QueryRoute`
-
-Drop-in replacement for Hermes' internal classify function.
-
-Automatically checks if web tools are available and adjusts routing accordingly.
-
----
-
-## Complete Example
-
-```python
-from hermes_adaptive_router import (
-    classify_query,
-    classify_provider,
-    route_with_provider,
-    AdaptiveQueryRoutingConfig,
-    build_adaptive_query_routing_prompt,
-    tavily_search_payload_override,
-    record_routing_event,
-    get_routing_stats,
-)
-
-# 1. Configure
-config = AdaptiveQueryRoutingConfig(
-    enabled=True,
-    prefer_search_summary=True,
-    tavily_answer="advanced",
-)
-
-# 2. Classify a query
-query = "latest OpenAI pricing today"
-route = classify_query(query, config)
-print(f"Route: {route.datasource} (confidence: {route.confidence})")
-
-# 3. Pick provider
-provider = classify_provider(query, config)
-print(f"Provider: {provider.provider} ({provider.reason})")
-
-# 4. Combined routing
-route, provider = route_with_provider(query, config)
-
-# 5. Generate system prompt
-prompt = build_adaptive_query_routing_prompt({"web_search", "web_extract"})
-
-# 6. Modify Tavily payload
-payload = {"query": query}
-modified = tavily_search_payload_override(payload, config)
-
-# 7. Record for observability
-record_routing_event(RoutingEvent(
-    query=query,
-    datasource=route.datasource,
-    complexity=route.complexity,
-    confidence=route.confidence,
-    latency_ms=0.05,
-))
-
-# 8. Check stats
-stats = get_routing_stats()
-print(f"Total routed: {stats['total']}")
-```
+Register a callback invoked after each recorded event.

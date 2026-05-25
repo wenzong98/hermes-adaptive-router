@@ -18,9 +18,9 @@ A lightweight, **no-LLM** query classifier that decides whether a user query sho
 
 - ⚡ **Sub-millisecond latency** — regex + keyword matching, zero API calls
 - 🎯 **Deterministic** — same input always produces same output
-- 🧪 **Fully tested** — 42 tests with benchmark regression suite
+- 🧪 **Well covered** — unit tests span routing, providers, integrations, cache, and observability
 - 🔧 **Configurable** — YAML-driven policy, no code changes needed
-- 🔌 **Multi-provider** — Tavily (default), MMX (Chinese), Exa (academic)
+- 🔌 **Multi-provider** — registry-driven provider selection with Tavily, MMX, Exa, Google, Bing, and more
 - 📊 **Observable** — built-in routing history and statistics
 
 ## Install
@@ -43,7 +43,10 @@ pip install -e .
 from hermes_adaptive_router import classify_query, build_adaptive_query_routing_prompt
 
 # Classify a query
-route = classify_query("latest OpenAI pricing today")
+route = classify_query(
+    "latest OpenAI pricing today",
+    available_tools={"web_search", "web_extract"},
+)
 print(route.datasource)   # "web_search"
 print(route.complexity)   # "intermediate"
 print(route.confidence)   # 0.92
@@ -87,8 +90,6 @@ adaptive_query_routing:
 pytest tests/ -q
 ```
 
-Expected: `42 passed`
-
 ## Why Deterministic?
 
 | Approach | Latency | Cost | Testability | Drift |
@@ -125,6 +126,18 @@ from hermes_adaptive_router import classify_provider
 classify_provider("最新中文AI模型")          # → mmx
 classify_provider("neural embedding paper")  # → exa
 classify_provider("latest Bitcoin price")    # → tavily
+```
+
+```python
+from hermes_adaptive_router import route_with_provider
+
+result = route_with_provider(
+    "search github python code example",
+    available_tools={"web_search"},
+    available_providers={"tavily", "google", "bing"},
+)
+print(result["provider"])  # "google"
+print(result["intent"])    # "code"
 ```
 
 ## Hermes Agent Integration

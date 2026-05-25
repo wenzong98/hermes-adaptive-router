@@ -96,6 +96,7 @@ the system prompt when web tools are available. It teaches the LLM:
 `tavily_search_payload_override()` mutates the search payload:
 - Adds `include_answer: advanced` when `prefer_search_summary` is on
 - Adds `search_depth: advanced` for richer synthesis
+- Hermes-specific config loading stays in `integrations.py`; the core router only parses mappings
 
 ### 3. Observability
 
@@ -108,7 +109,8 @@ the system prompt when web tools are available. It teaches the LLM:
 `get_routing_stats()` aggregates:
 - Datasource distribution
 - Complexity distribution
-- Latency percentiles
+- Retrieval strategy distribution
+- Latency mean/min/max
 
 ## Extensibility
 
@@ -124,6 +126,13 @@ the system prompt when web tools are available. It teaches the LLM:
 2. Add branch in `classify_query()`
 3. Update `build_adaptive_query_routing_prompt()`
 4. Add benchmark case
+
+### Adding a New Provider
+
+1. Register a `ProviderInfo` in `providers.py`
+2. Add `keyword_signals` and optional `preferred_languages`
+3. Update tests and docs
+4. Verify `classify_provider()` and `route_with_provider()` pick it up automatically
 
 ## Performance
 

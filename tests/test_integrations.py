@@ -1,5 +1,8 @@
 """Tests for Hermes integration helpers."""
 
+import sys
+import types
+
 from hermes_adaptive_router.integrations import (
     classify_for_hermes,
     get_system_prompt_addition,
@@ -56,3 +59,24 @@ def test_tavily_payload_override_disabled():
         raw_config={"adaptive_query_routing": {"enabled": False}},
     )
     assert "include_answer" not in payload
+
+
+def test_classify_for_hermes_loads_host_config_outside_core_router(monkeypatch):
+    fake_config_module = types.ModuleType("hermes_cli.config")
+    fake_config_module.load_config = lambda: {
+        "adaptive_query_routing": {
+            "enabled": True,
+            "simple_max_words": 2,
+        }
+    }
+    fake_package = types.ModuleType("hermes_cli")
+    fake_package.config = fake_config_module
+
+    monkeypatch.setitem(sys.modules, "hermes_cli", fake_package)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", fake_config_module)
+
+    route = classify_for_hermes(
+        "Python programming language overview",
+        available_tools={"web_search", "web_extract"},
+    )
+    assert route.complexity == "intermediate"

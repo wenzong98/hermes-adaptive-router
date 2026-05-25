@@ -1,32 +1,20 @@
-"""Multi-provider search routing for Hermes.
-
-Extends the adaptive query router with provider-aware routing:
-- Tavily: default, supports search + extract + crawl, has AI answer summary
-- MMX: MiniMax search, good for Chinese queries, no extract/crawl
-- Exa: semantic/neural search, good for research, supports extract
-- Google: SerpAPI / Programmable Search Engine
-- Bing: Azure Cognitive Search
-- DuckDuckGo: no API key required
-- Brave: privacy-focused search
-- Perplexity: AI-native search with citations
-
-The router picks the best provider based on query signals and availability.
-"""
+"""Multi-provider search routing for Hermes."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Optional
+from dataclasses import dataclass
+from typing import Any, Iterable, Optional
 
+from hermes_adaptive_router.intent_signals import (
+    detect_intent,
+    recommend_providers_by_intent,
+)
 from hermes_adaptive_router.language_detection import (
-    LanguageResult,
     detect_language,
     recommend_providers_by_language,
 )
 from hermes_adaptive_router.providers import (
-    ProviderInfo,
     classify_provider_extended,
-    get_provider,
     list_provider_names,
 )
 from hermes_adaptive_router.router import (
@@ -44,40 +32,6 @@ class ProviderPreference:
     provider: str  # "tavily", "mmx", "exa", "auto"
     reason: str
     confidence: float
-
-
-# Provider-specific keyword signals
-_MMX_PREFERRED_KEYWORDS = (
-    # Chinese content signals
-    "中文", "汉语", "中国", "国内", "国产", "中文网站",
-    "百度", "知乎", "微博", "微信", "哔哩哔哩", "bilibili",
-    "抖音", "小红书", "淘宝", "京东",
-    # MiniMax-specific
-    "minimax", "海螺", "abab",
-)
-
-_EXA_PREFERRED_KEYWORDS = (
-    # Research / academic signals
-    "research", "paper", "arxiv", "academic", "scholar",
-    "semantic", "neural", "embedding", "vector",
-    "论文", "研究", "学术", "科研",
-    # Deep content signals
-    "in-depth", "deep dive", "comprehensive", "thorough",
-    "深入", "全面", "系统",
-)
-
-_TAVILY_PREFERRED_KEYWORDS = (
-    # Recency signals where Tavily's answer summary shines
-    "latest", "current", "today", "now", "recent", "news",
-    "breaking", "price", "pricing", "release date",
-    "changelog", "version",
-    "最新", "今天", "现在", "近期", "新闻",
-    "价格", "定价", "版本", "发布日期",
-)
-
-
-def _contains_any(text: str, keywords: Iterable[str]) -> bool:
-    return any(keyword.lower() in text for keyword in keywords if keyword)
 
 
 def classify_provider(
@@ -99,59 +53,15 @@ def classify_provider(
     """
     cfg = config or load_adaptive_query_routing_config()
     providers = set(available_providers) if available_providers is not None else {"tavily", "mmx", "exa"}
-    text_l = f" {query.lower()} "
 
     if not cfg.enabled:
         return ProviderPreference("auto", "adaptive routing disabled", 0.5)
 
-    # Check provider-specific signals
-    if "mmx" in providers and _contains_any(text_l, _MMX_PREFERRED_KEYWORDS):
-        return ProviderPreference("mmx", "Chinese/MiniMax-specific query", 0.82)
-
-    if "exa" in providers and _contains_any(text_l, _EXA_PREFERRED_KEYWORDS):
-        return ProviderPreference("exa", "Research/academic query", 0.78)
-
-    if "tavily" in providers and _contains_any(text_l, _TAVILY_PREFERRED_KEYWORDS):
-        return ProviderPreference(
-            "tavily", "Recency query where Tavily answer summary excels", 0.85
-        )
-
-    # Default: Tavily if available (best all-rounder with answer summary)
-    if "tavily" in providers:
-        return ProviderPreference("tavily", "Default provider", 0.7)
-
-    # Fallback chain — only return a provider if it is actually available
-    if "exa" in providers:
-        return ProviderPreference("exa", "Fallback (Tavily unavailable)", 0.6)
-    if "mmx" in providers:
-        return ProviderPreference("mmx", "Fallback (Tavily/Exa unavailable)", 0.55)
-
-    return ProviderPreference("auto", "No specific provider available", 0.4)
-
-
-def _route_provider(query: str, providers: set[str]) -> ProviderPreference:
-    """Internal: pick provider without config check (used by route_with_provider)."""
-    text_l = f" {query.lower()} "
-
-    if "mmx" in providers and _contains_any(text_l, _MMX_PREFERRED_KEYWORDS):
-        return ProviderPreference("mmx", "Chinese/MiniMax-specific query", 0.82)
-
-    if "exa" in providers and _contains_any(text_l, _EXA_PREFERRED_KEYWORDS):
-        return ProviderPreference("exa", "Research/academic query", 0.78)
-
-    if "tavily" in providers and _contains_any(text_l, _TAVILY_PREFERRED_KEYWORDS):
-        return ProviderPreference(
-            "tavily", "Recency query where Tavily answer summary excels", 0.85
-        )
-
-    if "tavily" in providers:
-        return ProviderPreference("tavily", "Default provider", 0.7)
-    if "exa" in providers:
-        return ProviderPreference("exa", "Fallback (Tavily unavailable)", 0.6)
-    if "mmx" in providers:
-        return ProviderPreference("mmx", "Fallback (Tavily/Exa unavailable)", 0.55)
-
-    return ProviderPreference("auto", "No specific provider available", 0.4)
+    provider_name, provider_reason, provider_confidence = classify_provider_extended(
+        query,
+        available_providers=providers,
+    )
+    return ProviderPreference(provider_name, provider_reason, provider_confidence)
 
 
 def route_with_provider(
@@ -204,22 +114,18 @@ def route_with_provider(
             "intent": "general",
         }
 
-    # Language detection
+    # Language and intent detection.
     lang_result = detect_language(query) if use_language_detection else None
     language = lang_result.language if lang_result else "unknown"
     lang_confidence = lang_result.confidence if lang_result else 0.0
+    intent_result = detect_intent(query)
+    intent = intent_result.primary_intent
 
-    # Provider selection
-    if use_extended_providers and providers != {"tavily", "mmx", "exa"}:
-        # Use extended classifier
-        provider_name, provider_reason, provider_confidence = classify_provider_extended(
-            query, available_providers=providers
-        )
-    else:
-        provider_pref = _route_provider(query, providers)
-        provider_name = provider_pref.provider
-        provider_reason = provider_pref.reason
-        provider_confidence = provider_pref.confidence
+    # Provider selection comes from the registry-backed selector.
+    provider_name, provider_reason, provider_confidence = classify_provider_extended(
+        query,
+        available_providers=providers,
+    )
 
     # Language-based provider override (if confidence is high)
     if use_language_detection and lang_result and lang_result.confidence >= 0.5:
@@ -235,6 +141,15 @@ def route_with_provider(
                 provider_reason = f"Language-based override ({language}, confidence={lang_confidence:.2f})"
                 provider_confidence = max(provider_confidence, lang_confidence)
 
+    # Intent is a weaker signal than explicit provider/language matches.
+    if use_extended_providers and intent_result.confidence >= 0.65:
+        intent_providers = recommend_providers_by_intent(intent, providers)
+        generic_reason = provider_reason.startswith("Default provider") or provider_reason.startswith("Fallback")
+        if intent_providers and generic_reason and intent_providers[0] != provider_name:
+            provider_name = intent_providers[0]
+            provider_reason = f"Intent-based override ({intent}, confidence={intent_result.confidence:.2f})"
+            provider_confidence = max(provider_confidence, intent_result.confidence)
+
     return {
         "datasource": route.datasource,
         "complexity": route.complexity,
@@ -246,7 +161,8 @@ def route_with_provider(
         "provider_confidence": provider_confidence,
         "language": language,
         "language_confidence": lang_confidence,
-        "intent": "general",  # Can be enhanced with intent_signals.detect_intent
+        "intent": intent,
+        "intent_confidence": intent_result.confidence,
     }
 
 

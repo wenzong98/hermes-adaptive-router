@@ -29,10 +29,10 @@ pytest tests/test_benchmark.py -v
 
 ## Adding a New Provider
 
-1. Extend `ProviderPreference` in `src/hermes_adaptive_router/multi_provider.py`
-2. Add detection logic in `classify_provider()`
+1. Register a `ProviderInfo` in `src/hermes_adaptive_router/providers.py`
+2. Add `keyword_signals` and optional `preferred_languages`
 3. Update `docs/API_REFERENCE.md`
-4. Add benchmark cases
+4. Add tests that cover both `classify_provider()` and `route_with_provider()`
 
 ## Code Style
 

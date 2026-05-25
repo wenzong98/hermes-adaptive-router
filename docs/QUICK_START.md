@@ -32,24 +32,24 @@ cp -r src/hermes_adaptive_router /path/to/your/project/
 from hermes_adaptive_router import classify_query
 
 # Simple fact → direct answer
-route = classify_query("What is Python?")
+route = classify_query("What is Python?", available_tools={"web_search", "web_extract"})
 print(route.datasource)   # "direct"
 print(route.complexity)   # "simple"
 
 # Current news → web search
-route = classify_query("latest AI news today")
+route = classify_query("latest AI news today", available_tools={"web_search"})
 print(route.datasource)   # "web_search"
 print(route.complexity)   # "intermediate"
 
 # URL provided → extract
-route = classify_query("Summarize https://example.com/article")
+route = classify_query("Summarize https://example.com/article", available_tools={"web_search", "web_extract"})
 print(route.datasource)   # "web_extract"
 ```
 
 ### 2. Multi-Provider Routing
 
 ```python
-from hermes_adaptive_router import classify_provider
+from hermes_adaptive_router import classify_provider, route_with_provider
 
 # Chinese query → MMX
 pref = classify_provider("最新中文AI模型")
@@ -62,6 +62,15 @@ print(pref.provider)   # "exa"
 # General query → Tavily (default)
 pref = classify_provider("latest Bitcoin price")
 print(pref.provider)   # "tavily"
+
+# Intent-aware combined routing
+result = route_with_provider(
+    "search github python code example",
+    available_tools={"web_search"},
+    available_providers={"tavily", "google", "bing"},
+)
+print(result["provider"])  # "google"
+print(result["intent"])    # "code"
 ```
 
 ### 3. System Prompt Integration
@@ -83,13 +92,15 @@ Answer the user's question."""
 ### 4. Tavily Integration
 
 ```python
-from hermes_adaptive_router import tavily_search_payload_override, AdaptiveQueryRoutingConfig
+from hermes_adaptive_router import tavily_search_payload_override
 
-config = AdaptiveQueryRoutingConfig()
 payload = {"query": "latest AI news"}
 
 # Auto-add include_answer and search_depth
-modified = tavily_search_payload_override(payload, config)
+modified = tavily_search_payload_override(
+    payload,
+    raw_config={"adaptive_query_routing": {"tavily_answer": "advanced"}},
+)
 print(modified)
 # {"query": "latest AI news", "include_answer": "advanced", "search_depth": "advanced"}
 ```
@@ -165,9 +176,7 @@ make test
 ```
 
 Expected output:
-```
-42 passed
-```
+all tests pass
 
 ### 4. Test in Hermes
 

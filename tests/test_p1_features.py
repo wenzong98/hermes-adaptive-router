@@ -117,6 +117,11 @@ class TestProviderRegistry:
         assert "custom_search" in list_provider_names()
         p = get_provider("custom_search")
         assert p.description == "Custom search provider"
+        provider, reason, confidence = classify_provider_extended(
+            "special custom result",
+            available_providers={"custom_search", "tavily"},
+        )
+        assert provider == "custom_search"
 
     def test_get_provider_keywords(self):
         keywords = get_provider_keywords("mmx")
@@ -647,6 +652,20 @@ class TestP1Integration:
         assert result["provider"] in ("tavily", "google", "bing")
         assert "language" in result
         assert "intent" in result
+
+    def test_route_with_provider_intent_override(self):
+        from hermes_adaptive_router.multi_provider import route_with_provider
+
+        result = route_with_provider(
+            "search github python code example",
+            available_tools={"web_search"},
+            available_providers={"tavily", "google", "bing"},
+            use_extended_providers=True,
+            use_language_detection=False,
+        )
+        assert result["datasource"] == "web_search"
+        assert result["intent"] == "code"
+        assert result["provider"] == "google"
 
     def test_route_with_provider_chinese(self):
         from hermes_adaptive_router.multi_provider import route_with_provider

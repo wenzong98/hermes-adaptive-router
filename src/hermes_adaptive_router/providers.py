@@ -14,8 +14,10 @@ prefer it over the default Tavily.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable
+
+from hermes_adaptive_router.intent_signals import recommend_providers_by_intent
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,8 @@ _ALL_PROVIDERS: dict[str, ProviderInfo] = {}
 def register_provider(info: ProviderInfo) -> None:
     """Register a provider at import time."""
     _ALL_PROVIDERS[info.name] = info
+    if "_build_provider_keyword_map" in globals():
+        _build_provider_keyword_map()
 
 
 def get_provider(name: str) -> ProviderInfo | None:
@@ -224,9 +228,54 @@ def get_provider_keywords(provider: str) -> tuple[str, ...]:
     return _PROVIDER_KEYWORD_MAP.get(provider, ())
 
 
+def _match_provider_keyword(
+    query: str,
+    providers: set[str],
+) -> tuple[str, str, float] | None:
+    text_l = f" {query.lower()} "
+    best_match: tuple[str, str, float, int, int] | None = None
+    priority_order = ["mmx", "exa", "tavily", "google", "bing", "duckduckgo", "brave", "perplexity"]
+    priority_rank = {name: idx for idx, name in enumerate(priority_order)}
+
+    for name, keywords in _PROVIDER_KEYWORD_MAP.items():
+        if name not in providers:
+            continue
+        match_count = sum(1 for kw in keywords if kw and kw.lower() in text_l)
+        if match_count <= 0:
+            continue
+        info = get_provider(name)
+        desc = info.description if info else name
+        rank = priority_rank.get(name, len(priority_rank))
+        candidate = (name, f"{desc} keyword signal", 0.82, match_count, -rank)
+        if best_match is None or candidate[3:] > best_match[3:]:
+            best_match = candidate
+
+    if best_match is None:
+        return None
+    return best_match[:3]
+
+
+def _fallback_provider(providers: set[str]) -> tuple[str, str, float]:
+    if "tavily" in providers:
+        return ("tavily", "Default provider", 0.7)
+
+    fallback_chain = ["exa", "mmx", "duckduckgo", "brave", "perplexity", "google", "bing"]
+    for name in fallback_chain:
+        if name in providers:
+            return (name, "Fallback (Tavily unavailable)", 0.6)
+
+    if providers:
+        first = next(iter(providers))
+        return (first, "Fallback (no keyword match)", 0.5)
+
+    return ("auto", "No specific provider available", 0.4)
+
+
 def classify_provider_extended(
     query: str,
     available_providers: Iterable[str] | None = None,
+    *,
+    intent: str | None = None,
 ) -> tuple[str, str, float]:
     """Pick the best provider from an extended set.
 
@@ -238,34 +287,19 @@ def classify_provider_extended(
     3. Fallback chain: Exa → MMX → DuckDuckGo (no key) → first available
     """
     providers = set(available_providers) if available_providers is not None else set(list_provider_names())
-    text_l = f" {query.lower()} "
+    if not providers:
+        return ("auto", "No specific provider available", 0.4)
 
-    # 1. Check keyword signals for each available provider
-    for name, keywords in _PROVIDER_KEYWORD_MAP.items():
-        if name not in providers:
-            continue
-        if any(kw.lower() in text_l for kw in keywords if kw):
-            info = get_provider(name)
-            desc = info.description if info else name
-            return (name, f"{desc} keyword signal", 0.82)
+    intent_candidates = recommend_providers_by_intent(intent or "general", providers)
+    if intent and intent != "general" and intent_candidates:
+        preferred = intent_candidates[0]
+        return (preferred, f"Intent-based preference ({intent})", 0.76)
 
-    # 2. Default to Tavily
-    if "tavily" in providers:
-        return ("tavily", "Default provider", 0.7)
+    keyword_match = _match_provider_keyword(query, providers)
+    if keyword_match is not None:
+        return keyword_match
 
-    # 3. Fallback chain
-    fallback_chain = ["exa", "mmx", "duckduckgo", "brave", "perplexity", "google", "bing"]
-    for name in fallback_chain:
-        if name in providers:
-            return (name, f"Fallback (Tavily unavailable)", 0.6)
-
-    # 4. No providers available
-    if providers:
-        # Return first available as last resort
-        first = next(iter(providers))
-        return (first, f"Fallback (no keyword match)", 0.5)
-
-    return ("auto", "No specific provider available", 0.4)
+    return _fallback_provider(providers)
 
 
 __all__ = [

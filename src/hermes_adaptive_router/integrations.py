@@ -17,6 +17,17 @@ from hermes_adaptive_router.router import (
 )
 
 
+def _load_hermes_raw_config() -> Mapping[str, Any]:
+    """Best-effort Hermes config loader kept out of the core router layer."""
+    try:
+        from hermes_cli.config import load_config
+
+        config = load_config()
+    except Exception:
+        return {}
+    return config if isinstance(config, Mapping) else {}
+
+
 def classify_for_hermes(
     query: str,
     *,
@@ -28,7 +39,7 @@ def classify_for_hermes(
     ``available_tools`` should be the set of tool names the current agent
     session has registered (e.g. ``{"web_search", "web_extract"}``).
     """
-    cfg = load_adaptive_query_routing_config(raw_config)
+    cfg = load_adaptive_query_routing_config(raw_config if raw_config is not None else _load_hermes_raw_config())
     return classify_query(query, cfg, available_tools=available_tools)
 
 
@@ -41,7 +52,7 @@ def get_system_prompt_addition(
 
     Returns empty string when routing is disabled or no web tools are loaded.
     """
-    cfg = load_adaptive_query_routing_config(raw_config)
+    cfg = load_adaptive_query_routing_config(raw_config if raw_config is not None else _load_hermes_raw_config())
     return build_adaptive_query_routing_prompt(available_tools, cfg)
 
 
@@ -55,7 +66,7 @@ def tavily_search_payload_override(
     If ``prefer_search_summary`` is enabled and ``tavily_answer`` is set,
     this adds ``include_answer`` (and ``search_depth`` for ``advanced``).
     """
-    cfg = load_adaptive_query_routing_config(raw_config)
+    cfg = load_adaptive_query_routing_config(raw_config if raw_config is not None else _load_hermes_raw_config())
     if not cfg.enabled or not cfg.prefer_search_summary:
         return payload
 

@@ -193,10 +193,51 @@ def _select_config_section(raw_config: Mapping[str, Any]) -> Mapping[str, Any]:
     return {}
 
 
+def _normalize_tavily_answer(
+    value: Any,
+    default: str | bool | None,
+) -> str | bool | None:
+    if isinstance(value, str):
+        normalized_answer = value.strip().lower()
+        if normalized_answer == "":
+            return False
+        if normalized_answer in {"false", "off", "none", "no", "0"}:
+            return False
+        if normalized_answer in {"true", "on", "yes", "1"}:
+            return True
+        if normalized_answer in {"basic", "advanced"}:
+            return normalized_answer
+        return default
+    return value
+
+
+def parse_adaptive_query_routing_config(
+    raw_config: Optional[Mapping[str, Any]] = None,
+) -> AdaptiveQueryRoutingConfig:
+    """Parse adaptive routing config from a plain mapping."""
+    section = _select_config_section(raw_config if isinstance(raw_config, Mapping) else {})
+    default = _DEF_CONFIG
+    tavily_answer = _normalize_tavily_answer(
+        section.get("tavily_answer", default.tavily_answer),
+        default.tavily_answer,
+    )
+
+    return AdaptiveQueryRoutingConfig(
+        enabled=_as_bool(section.get("enabled"), default.enabled),
+        simple_max_words=_as_int(section.get("simple_max_words"), default.simple_max_words, minimum=1, maximum=100),
+        prefer_search_summary=_as_bool(section.get("prefer_search_summary"), default.prefer_search_summary),
+        tavily_answer=tavily_answer,
+        force_web_keywords=_as_tuple(section.get("force_web_keywords"), default.force_web_keywords),
+        complex_keywords=_as_tuple(section.get("complex_keywords"), default.complex_keywords),
+        direct_keywords=_as_tuple(section.get("direct_keywords"), default.direct_keywords),
+        complex_min_signals=_as_int(section.get("complex_min_signals"), default.complex_min_signals, minimum=1, maximum=10),
+    )
+
+
 def load_adaptive_query_routing_config(
     raw_config: Optional[Mapping[str, Any]] = None,
 ) -> AdaptiveQueryRoutingConfig:
-    """Load adaptive routing config from a mapping or Hermes config.yaml.
+    """Load adaptive routing config from a plain mapping.
 
     Supported shapes::
 
@@ -209,43 +250,11 @@ def load_adaptive_query_routing_config(
             prefer_search_summary: true
             tavily_answer: advanced
 
-    The ``web`` nested form keeps this close to ``web_search``/``web_extract``;
-    the top-level form is supported for future non-web routing expansion.
+    The ``web`` nested form keeps this close to ``web_search``/``web_extract``.
+    The top-level form is supported for future non-web routing expansion.
+    When ``raw_config`` is ``None``, this returns the built-in defaults.
     """
-
-    if raw_config is None:
-        try:
-            from hermes_cli.config import load_config
-
-            raw_config = load_config() or {}
-        except Exception:
-            raw_config = {}
-
-    section = _select_config_section(raw_config if isinstance(raw_config, Mapping) else {})
-    default = _DEF_CONFIG
-
-    tavily_answer = section.get("tavily_answer", default.tavily_answer)
-    if isinstance(tavily_answer, str):
-        normalized_answer = tavily_answer.strip().lower()
-        if normalized_answer == "":
-            tavily_answer = False
-        elif normalized_answer in {"false", "off", "none", "no", "0"}:
-            tavily_answer = False
-        elif normalized_answer in {"true", "on", "yes", "1"}:
-            tavily_answer = True
-        elif normalized_answer not in {"basic", "advanced"}:
-            tavily_answer = default.tavily_answer
-
-    return AdaptiveQueryRoutingConfig(
-        enabled=_as_bool(section.get("enabled"), default.enabled),
-        simple_max_words=_as_int(section.get("simple_max_words"), default.simple_max_words, minimum=1, maximum=100),
-        prefer_search_summary=_as_bool(section.get("prefer_search_summary"), default.prefer_search_summary),
-        tavily_answer=tavily_answer,
-        force_web_keywords=_as_tuple(section.get("force_web_keywords"), default.force_web_keywords),
-        complex_keywords=_as_tuple(section.get("complex_keywords"), default.complex_keywords),
-        direct_keywords=_as_tuple(section.get("direct_keywords"), default.direct_keywords),
-        complex_min_signals=_as_int(section.get("complex_min_signals"), default.complex_min_signals, minimum=1, maximum=10),
-    )
+    return parse_adaptive_query_routing_config(raw_config)
 
 
 def _contains_any(text: str, keywords: Iterable[str]) -> bool:
@@ -412,4 +421,5 @@ __all__ = [
     "build_adaptive_query_routing_prompt",
     "classify_query",
     "load_adaptive_query_routing_config",
+    "parse_adaptive_query_routing_config",
 ]
